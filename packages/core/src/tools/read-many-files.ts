@@ -345,9 +345,26 @@ Use this tool when the user's query implies needing the content of several files
       let gitIgnoredCount = 0;
       let geminiIgnoredCount = 0;
 
+      // Helper function to normalize paths for Windows
+      const normalizePathForWindows = (p: string) => {
+        if (process.platform === 'win32') {
+          return p.toLowerCase();
+        }
+        return p;
+      };
+
+      const normalizedTargetDir = normalizePathForWindows(
+        this.config.getTargetDir(),
+      );
+
       for (const absoluteFilePath of entries) {
         // Security check: ensure the glob library didn't return something outside targetDir.
-        if (!absoluteFilePath.startsWith(this.config.getTargetDir())) {
+        // Normalize paths for case-insensitive comparison on Windows
+        if (
+          !normalizePathForWindows(absoluteFilePath).startsWith(
+            normalizedTargetDir,
+          )
+        ) {
           skippedFiles.push({
             path: absoluteFilePath,
             reason: `Security: Glob library returned path outside target directory. Base: ${this.config.getTargetDir()}, Path: ${absoluteFilePath}`,
