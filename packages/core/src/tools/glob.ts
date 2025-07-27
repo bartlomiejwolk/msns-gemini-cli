@@ -76,6 +76,10 @@ export interface GlobToolParams {
    * ignored because the search always scans all files)
    */
   respect_git_ignore?: boolean;
+  /**
+   * Whether to respect .geminiignore patterns
+   */
+  respect_gemini_ignore?: boolean;
 }
 
 /**
@@ -109,7 +113,12 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
           },
           respect_git_ignore: {
             description:
-              'Kept for compatibility; .gitignore files are always ignored.',
+              'Optional: Whether to respect .gitignore patterns when finding files. Only available in git repositories. Defaults to true.',
+            type: Type.BOOLEAN,
+          },
+          respect_gemini_ignore: {
+            description:
+              'Optional: Whether to respect .geminiignore patterns when listing files. Defaults to true.',
             type: Type.BOOLEAN,
           },
         },
@@ -179,6 +188,8 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
    * Executes the glob search with the given parameters using ripgrep.
    */
   async execute(params: GlobToolParams): Promise<ToolResult> {
+    console.debug('glob.ts execute()');
+
     const validationError = this.validateToolParams(params);
     if (validationError) {
       return {
@@ -193,6 +204,16 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
         params.path || '.',
       );
 
+      const respectGitIgnore =
+        params.respect_git_ignore !== undefined
+          ? params.respect_git_ignore
+          : (this.config.getFileFilteringRespectGitIgnore() ?? true);
+
+      const respectGeminiIgnore =
+        params.respect_gemini_ignore !== undefined
+          ? params.respect_gemini_ignore
+          : (this.config.getFileFilteringRespectGeminiIgnore() ?? true);
+
       // Build ripgrep arguments ensuring proper escaping and portability
       const rgArgs = [
         '--files',
@@ -200,8 +221,28 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
         '--glob',
         params.pattern,
         '--glob-case-insensitive', // Use case-insensitive glob matching
-        '--no-ignore', // always scan all files, ignore .gitignore
       ];
+
+      console.debug('respectGitIgnore: ', respectGitIgnore);
+      console.debug('respectGeminiIgnore: ', respectGeminiIgnore);
+      if (!respectGitIgnore && !respectGeminiIgnore) {
+        rgArgs.push('--no-ignore');
+      } else if (!respectGitIgnore) {
+        rgArgs.push('--no-ignore-vcs');
+      }
+
+      if (respectGeminiIgnore) {
+        const geminiIgnorePath = path.join(
+          this.config.getTargetDir(),
+          '.geminiignore',
+        );
+        if (fs.existsSync(geminiIgnorePath)) {
+          rgArgs.push('--ignore-file', geminiIgnorePath);
+          console.debug('Using .geminiignore file: ', geminiIgnorePath);
+        }
+      }
+
+      console.debug('rg args: ', rgArgs);
 
       const rgResult = spawnSync('rg', rgArgs, {
         cwd: searchDirAbsolute,

@@ -20,6 +20,7 @@ describe('GlobTool', () => {
   const mockConfig = {
     getFileService: () => new FileDiscoveryService(tempRootDir),
     getFileFilteringRespectGitIgnore: () => true,
+    getFileFilteringRespectGeminiIgnore: () => true,
     getTargetDir: () => tempRootDir,
   } as unknown as Config;
 
