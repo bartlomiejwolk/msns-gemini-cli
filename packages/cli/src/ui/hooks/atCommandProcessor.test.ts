@@ -387,7 +387,7 @@ describe('handleAtCommand', () => {
       `Path ${invalidFile} not found directly, attempting glob search.`,
     );
     expect(mockOnDebugMessage).toHaveBeenCalledWith(
-      `Glob search for '**/*${invalidFile}*' found no files or an error. Path ${invalidFile} will be skipped.`,
+      `Glob search for '**/*${invalidFile}*' did not return a usable path. Path ${invalidFile} will be skipped.`, // msns: updated to match Ripgrep output
     );
     expect(mockOnDebugMessage).toHaveBeenCalledWith(
       'Lone @ detected, will be treated as text in the modified query.',

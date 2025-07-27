@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// msns: JS glob library impl. replaced with Ripgrep.
 import fs from 'fs';
 import path from 'path';
-import { glob } from 'glob';
+import { spawnSync } from 'child_process';
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { BaseTool, Icon, ToolResult } from './tools.js';
 import { Type } from '@google/genai';
@@ -65,12 +66,14 @@ export interface GlobToolParams {
   path?: string;
 
   /**
-   * Whether the search should be case-sensitive (optional, defaults to false)
+   * Whether the search should be case‑sensitive (kept for API compatibility,
+   * ignored because the search is always case‑insensitive)
    */
   case_sensitive?: boolean;
 
   /**
-   * Whether to respect .gitignore patterns (optional, defaults to true)
+   * Whether to respect .gitignore patterns (kept for API compatibility,
+   * ignored because the search always scans all files)
    */
   respect_git_ignore?: boolean;
 }
@@ -85,7 +88,7 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
     super(
       GlobTool.Name,
       'FindFiles',
-      'Efficiently finds files matching specific glob patterns (e.g., `src/**/*.ts`, `**/*.md`), returning absolute paths sorted by modification time (newest first). Ideal for quickly locating files based on their name or path structure, especially in large codebases.',
+      'Efficiently finds files matching specific glob patterns (e.g., `src/**/*.ts`, `**/*.md`), returning absolute paths.',
       Icon.FileSearch,
       {
         properties: {
@@ -101,12 +104,12 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
           },
           case_sensitive: {
             description:
-              'Optional: Whether the search should be case-sensitive. Defaults to false.',
+              'Kept for compatibility; search is always case‑insensitive.',
             type: Type.BOOLEAN,
           },
           respect_git_ignore: {
             description:
-              'Optional: Whether to respect .gitignore patterns when finding files. Only available in git repositories. Defaults to true.',
+              'Kept for compatibility; .gitignore files are always ignored.',
             type: Type.BOOLEAN,
           },
         },
@@ -134,13 +137,12 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
       return `Search path ("${searchDirAbsolute}") resolves outside the tool's root directory ("${this.config.getTargetDir()}").`;
     }
 
-    const targetDir = searchDirAbsolute || this.config.getTargetDir();
     try {
-      if (!fs.existsSync(targetDir)) {
-        return `Search path does not exist ${targetDir}`;
+      if (!fs.existsSync(searchDirAbsolute)) {
+        return `Search path does not exist: ${searchDirAbsolute}`;
       }
-      if (!fs.statSync(targetDir).isDirectory()) {
-        return `Search path is not a directory: ${targetDir}`;
+      if (!fs.statSync(searchDirAbsolute).isDirectory()) {
+        return `Search path is not a directory: ${searchDirAbsolute}`;
       }
     } catch (e: unknown) {
       return `Error accessing search path: ${e}`;
@@ -174,12 +176,9 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
   }
 
   /**
-   * Executes the glob search with the given parameters
+   * Executes the glob search with the given parameters using ripgrep.
    */
-  async execute(
-    params: GlobToolParams,
-    signal: AbortSignal,
-  ): Promise<ToolResult> {
+  async execute(params: GlobToolParams): Promise<ToolResult> {
     const validationError = this.validateToolParams(params);
     if (validationError) {
       return {
@@ -194,92 +193,75 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
         params.path || '.',
       );
 
-      // Get centralized file discovery service
-      const respectGitIgnore =
-        params.respect_git_ignore ??
-        this.config.getFileFilteringRespectGitIgnore();
-      const fileDiscovery = this.config.getFileService();
+      // Build ripgrep arguments ensuring proper escaping and portability
+      const rgArgs = [
+        '--files',
+        '--null',
+        '--glob',
+        params.pattern,
+        '--glob-case-insensitive', // Use case-insensitive glob matching
+        '--no-ignore', // always scan all files, ignore .gitignore
+      ];
 
-      const entries = (await glob(params.pattern, {
+      const rgResult = spawnSync('rg', rgArgs, {
         cwd: searchDirAbsolute,
-        withFileTypes: true,
-        nodir: true,
-        stat: true,
-        nocase: !params.case_sensitive,
-        dot: true,
-        ignore: ['**/node_modules/**', '**/.git/**'],
-        follow: false,
-        signal,
-      })) as GlobPath[];
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024, // 10 MB safety buffer
+      });
 
-      // Apply git-aware filtering if enabled and in git repository
-      let filteredEntries = entries;
-      let gitIgnoredCount = 0;
-
-      if (respectGitIgnore) {
-        const relativePaths = entries.map((p) =>
-          path.relative(this.config.getTargetDir(), p.fullpath()),
-        );
-        const filteredRelativePaths = fileDiscovery.filterFiles(relativePaths, {
-          respectGitIgnore,
-        });
-        const filteredAbsolutePaths = new Set(
-          filteredRelativePaths.map((p) =>
-            path.resolve(this.config.getTargetDir(), p),
-          ),
-        );
-
-        filteredEntries = entries.filter((entry) =>
-          filteredAbsolutePaths.has(entry.fullpath()),
-        );
-        gitIgnoredCount = entries.length - filteredEntries.length;
-      }
-
-      if (!filteredEntries || filteredEntries.length === 0) {
-        let message = `No files found matching pattern "${params.pattern}" within ${searchDirAbsolute}.`;
-        if (gitIgnoredCount > 0) {
-          message += ` (${gitIgnoredCount} files were git-ignored)`;
-        }
+      if (rgResult.error) {
         return {
-          llmContent: message,
-          returnDisplay: `No files found`,
+          llmContent: `Error during ripgrep search: ${rgResult.error.message}`,
+          returnDisplay: 'Error: ripgrep failed.',
         };
       }
 
-      // Set filtering such that we first show the most recent files
-      const oneDayInMs = 24 * 60 * 60 * 1000;
-      const nowTimestamp = new Date().getTime();
-
-      // Sort the filtered entries using the new helper function
-      const sortedEntries = sortFileEntries(
-        filteredEntries,
-        nowTimestamp,
-        oneDayInMs,
-      );
-
-      const sortedAbsolutePaths = sortedEntries.map((entry) =>
-        entry.fullpath(),
-      );
-      const fileListDescription = sortedAbsolutePaths.join('\n');
-      const fileCount = sortedAbsolutePaths.length;
-
-      let resultMessage = `Found ${fileCount} file(s) matching "${params.pattern}" within ${searchDirAbsolute}`;
-      if (gitIgnoredCount > 0) {
-        resultMessage += ` (${gitIgnoredCount} additional files were git-ignored)`;
+      if (rgResult.stderr) {
+        console.error(`ripgrep stderr: ${rgResult.stderr}`);
       }
-      resultMessage += `, sorted by modification time (newest first):\n${fileListDescription}`;
+
+      const allFilePaths = rgResult.stdout
+        .split('\0') // --null output
+        .filter(Boolean)
+        .map((p) => path.resolve(searchDirAbsolute, p));
+
+      const totalRgCount = allFilePaths.length;
+      const maxResults = 2000;
+      let truncatedCount = 0;
+      let filePathsToDisplay = allFilePaths;
+
+      if (totalRgCount > maxResults) {
+        filePathsToDisplay = allFilePaths.slice(0, maxResults);
+        truncatedCount = totalRgCount - maxResults;
+      }
+
+      const displayedCount = filePathsToDisplay.length;
+
+      if (displayedCount === 0) {
+        return {
+          llmContent: `Search term: ${params.pattern}\n\nNo files found matching pattern "${params.pattern}"\n\nFound 0 file(s).`,
+          returnDisplay: 'No files found',
+        };
+      }
+
+      const fileListDescription = filePathsToDisplay.join('\n');
+      let llmContent = `Search term: ${params.pattern}\n\n${fileListDescription}\n\nFound ${displayedCount} file(s).`;
+
+      if (truncatedCount > 0) {
+        llmContent += ` Output truncated. ${totalRgCount} results returned by ripgrep, ${truncatedCount} truncated.`;
+      }
 
       return {
-        llmContent: resultMessage,
-        returnDisplay: `Found ${fileCount} matching file(s)`,
+        llmContent,
+        returnDisplay: `Found ${displayedCount} matching file(s)`,
       };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      console.error(`GlobLogic execute Error: ${errorMessage}`, error);
+      console.error(`GlobTool execute Error: ${errorMessage}`, error);
       return {
         llmContent: `Error during glob search operation: ${errorMessage}`,
-        returnDisplay: `Error: An unexpected error occurred.`,
+        returnDisplay: 'Error: An unexpected error occurred.',
       };
     }
   }
