@@ -67,6 +67,7 @@ export const Footer: React.FC<FooterProps> = ({
             {' ' + (debugMessage || '--debug')}
           </Text>
         )}
+        <Text color={Colors.AccentYellow}> MSNS</Text>
       </Box>
 
       {/* Middle Section: Centered Sandbox Info */}
