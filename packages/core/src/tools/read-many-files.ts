@@ -8,6 +8,7 @@ import { BaseTool, Icon, ToolResult } from './tools.js';
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { getErrorMessage } from '../utils/errors.js';
 import * as path from 'path';
+import process from 'node:process';
 import { glob } from 'glob';
 import { getCurrentGeminiMdFilename } from './memoryTool.js';
 import {
@@ -347,7 +348,14 @@ Use this tool when the user's query implies needing the content of several files
 
       for (const absoluteFilePath of entries) {
         // Security check: ensure the glob library didn't return something outside targetDir.
-        if (!absoluteFilePath.startsWith(this.config.getTargetDir())) {
+        const isPathOutsideRoot =
+          process.platform === 'win32'
+            ? !absoluteFilePath
+                .toLowerCase()
+                .startsWith(this.config.getTargetDir().toLowerCase())
+            : !absoluteFilePath.startsWith(this.config.getTargetDir());
+
+        if (isPathOutsideRoot) {
           skippedFiles.push({
             path: absoluteFilePath,
             reason: `Security: Glob library returned path outside target directory. Base: ${this.config.getTargetDir()}, Path: ${absoluteFilePath}`,
