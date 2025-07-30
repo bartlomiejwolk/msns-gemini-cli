@@ -316,35 +316,31 @@ Use this tool when the user's query implies needing the content of several files
         },
       );
 
-      const gitFilteredEntries =
-        fileFilteringOptions.respectGitIgnore
-          ? fileDiscovery
-              .filterFiles(
-                entries.map((p) =>
-                  path.relative(this.config.getTargetDir(), p),
-                ),
-                {
-                  respectGitIgnore: true,
-                  respectGeminiIgnore: false,
-                },
-              )
-              .map((p) => path.resolve(this.config.getTargetDir(), p))
-          : entries;
+      const gitFilteredEntries = fileFilteringOptions.respectGitIgnore
+        ? fileDiscovery
+            .filterFiles(
+              entries.map((p) => path.relative(this.config.getTargetDir(), p)),
+              {
+                respectGitIgnore: true,
+                respectGeminiIgnore: false,
+              },
+            )
+            .map((p) => path.resolve(this.config.getTargetDir(), p))
+        : entries;
 
-      const finalFilteredEntries =
-        fileFilteringOptions.respectGeminiIgnore
-          ? fileDiscovery
-              .filterFiles(
-                gitFilteredEntries.map((p) =>
-                  path.relative(this.config.getTargetDir(), p),
-                ),
-                {
-                  respectGitIgnore: false,
-                  respectGeminiIgnore: true,
-                },
-              )
-              .map((p) => path.resolve(this.config.getTargetDir(), p))
-          : gitFilteredEntries;
+      const finalFilteredEntries = fileFilteringOptions.respectGeminiIgnore
+        ? fileDiscovery
+            .filterFiles(
+              gitFilteredEntries.map((p) =>
+                path.relative(this.config.getTargetDir(), p),
+              ),
+              {
+                respectGitIgnore: false,
+                respectGeminiIgnore: true,
+              },
+            )
+            .map((p) => path.resolve(this.config.getTargetDir(), p))
+        : gitFilteredEntries;
 
       const gitFilteredSet = new Set(
         process.platform === 'win32'
@@ -378,7 +374,10 @@ Use this tool when the user's query implies needing the content of several files
         }
 
         // Check if this file was filtered out by git ignore
-        const checkPath = process.platform === 'win32' ? absoluteFilePath.toLowerCase() : absoluteFilePath;
+        const checkPath =
+          process.platform === 'win32'
+            ? absoluteFilePath.toLowerCase()
+            : absoluteFilePath;
 
         if (
           fileFilteringOptions.respectGitIgnore &&
