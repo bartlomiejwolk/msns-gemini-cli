@@ -36,8 +36,8 @@ export function isWithinRoot(
   pathToCheck: string,
   rootDirectory: string,
 ): boolean {
-  let normalizedPathToCheck = path.resolve(pathToCheck).toLowerCase();
-  let normalizedRootDirectory = path.resolve(rootDirectory).toLowerCase();
+  let normalizedPathToCheck = path.resolve(pathToCheck);
+  let normalizedRootDirectory = path.resolve(rootDirectory);
 
   if (process.platform === 'win32') {
     normalizedPathToCheck = normalizedPathToCheck.toLowerCase();
