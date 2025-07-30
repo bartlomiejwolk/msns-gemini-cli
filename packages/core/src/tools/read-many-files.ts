@@ -316,32 +316,46 @@ Use this tool when the user's query implies needing the content of several files
         },
       );
 
-      const gitFilteredEntries = fileFilteringOptions.respectGitIgnore
-        ? fileDiscovery
-            .filterFiles(
-              entries.map((p) => path.relative(this.config.getTargetDir(), p)),
-              {
-                respectGitIgnore: true,
-                respectGeminiIgnore: false,
-              },
-            )
-            .map((p) => path.resolve(this.config.getTargetDir(), p))
-        : entries;
+      const gitFilteredEntries =
+        fileFilteringOptions.respectGitIgnore
+          ? fileDiscovery
+              .filterFiles(
+                entries.map((p) =>
+                  path.relative(this.config.getTargetDir(), p),
+                ),
+                {
+                  respectGitIgnore: true,
+                  respectGeminiIgnore: false,
+                },
+              )
+              .map((p) => path.resolve(this.config.getTargetDir(), p))
+          : entries;
 
-      // Apply gemini ignore filtering if enabled
-      const finalFilteredEntries = fileFilteringOptions.respectGeminiIgnore
-        ? fileDiscovery
-            .filterFiles(
-              gitFilteredEntries.map((p) =>
-                path.relative(this.config.getTargetDir(), p),
-              ),
-              {
-                respectGitIgnore: false,
-                respectGeminiIgnore: true,
-              },
-            )
-            .map((p) => path.resolve(this.config.getTargetDir(), p))
-        : gitFilteredEntries;
+      const finalFilteredEntries =
+        fileFilteringOptions.respectGeminiIgnore
+          ? fileDiscovery
+              .filterFiles(
+                gitFilteredEntries.map((p) =>
+                  path.relative(this.config.getTargetDir(), p),
+                ),
+                {
+                  respectGitIgnore: false,
+                  respectGeminiIgnore: true,
+                },
+              )
+              .map((p) => path.resolve(this.config.getTargetDir(), p))
+          : gitFilteredEntries;
+
+      const gitFilteredSet = new Set(
+        process.platform === 'win32'
+          ? gitFilteredEntries.map((p) => p.toLowerCase())
+          : gitFilteredEntries,
+      );
+      const finalFilteredSet = new Set(
+        process.platform === 'win32'
+          ? finalFilteredEntries.map((p) => p.toLowerCase())
+          : finalFilteredEntries,
+      );
 
       let gitIgnoredCount = 0;
       let geminiIgnoredCount = 0;
@@ -364,18 +378,19 @@ Use this tool when the user's query implies needing the content of several files
         }
 
         // Check if this file was filtered out by git ignore
+        const checkPath = process.platform === 'win32' ? absoluteFilePath.toLowerCase() : absoluteFilePath;
+
         if (
           fileFilteringOptions.respectGitIgnore &&
-          !gitFilteredEntries.includes(absoluteFilePath)
+          !gitFilteredSet.has(checkPath)
         ) {
           gitIgnoredCount++;
           continue;
         }
 
-        // Check if this file was filtered out by gemini ignore
         if (
           fileFilteringOptions.respectGeminiIgnore &&
-          !finalFilteredEntries.includes(absoluteFilePath)
+          !finalFilteredSet.has(checkPath)
         ) {
           geminiIgnoredCount++;
           continue;
