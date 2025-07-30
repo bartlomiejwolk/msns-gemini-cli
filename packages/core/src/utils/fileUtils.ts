@@ -36,8 +36,13 @@ export function isWithinRoot(
   pathToCheck: string,
   rootDirectory: string,
 ): boolean {
-  const normalizedPathToCheck = path.resolve(pathToCheck);
-  const normalizedRootDirectory = path.resolve(rootDirectory);
+  let normalizedPathToCheck = path.resolve(pathToCheck).toLowerCase();
+  let normalizedRootDirectory = path.resolve(rootDirectory).toLowerCase();
+
+  if (process.platform === 'win32') {
+    normalizedPathToCheck = normalizedPathToCheck.toLowerCase();
+    normalizedRootDirectory = normalizedRootDirectory.toLowerCase();
+  }
 
   // Ensure the rootDirectory path ends with a separator for correct startsWith comparison,
   // unless it's the root path itself (e.g., '/' or 'C:\').
